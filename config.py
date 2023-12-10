@@ -6,6 +6,7 @@ import os
 load_dotenv()
 API_TOKEN = os.getenv('API_TOKEN')
 
+
 # Initialize bot and dispatcher
 bot = Bot(token=API_TOKEN)
 dp = Dispatcher(bot, storage=MemoryStorage())
