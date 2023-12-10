@@ -4,7 +4,7 @@ from config import bot, dp
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Command
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from scraper import process_page, get_total_pages
+from scraper import fetch_and_parse, get_total_pages
 
 
 class Form(StatesGroup):
@@ -65,6 +65,15 @@ async def process_currency(callback_query: types.CallbackQuery, state: FSMContex
     await bot.send_message(callback_query.from_user.id, 'Введите диапазон цен в формате "мин-макс":')
     await Form.price_range.set()
 
+
+async def send_product_data(url: str, chat_id):
+    async for product_data in fetch_and_parse(url):
+        title = product_data['title']
+        description = product_data['description']
+        price = product_data['price']
+        message = f"1️⃣Название: {title}\n2️⃣Описание: {description}\n3️⃣Цена: {price}\n4️⃣Ссылка: {product_data['url']}\n"
+        await bot.send_message(chat_id, message)
+
 @dp.message_handler(state=Form.price_range)
 async def process_price_range(message: types.Message, state: FSMContext):
     await bot.send_message(message.chat.id, f"Начало парсинга...")
@@ -89,14 +98,8 @@ async def process_price_range(message: types.Message, state: FSMContext):
     else:
         for page_number in range(1, total_pages + 1):
             url = f"{base_url}&page={page_number}"
-            parsed_data = await process_page(url)
-            print(url)
-            for product in parsed_data:
-                title = product['title']
-                description = product['description']
-                price = product['price']
-                my_message = f"1️⃣Название: {title}\n2️⃣Описание: {description}\n3️⃣Цена: {price}\n4️⃣Cсылка: {product['url']}\n"
-                await bot.send_message(message.chat.id, my_message)
+            await send_product_data(url, message.chat.id)
+
         await bot.send_message(message.chat.id, "✅Парсинг завершен.✅")
         keyboard = InlineKeyboardMarkup()
         transport_btn = InlineKeyboardButton('Транспорт', callback_data='transport')
