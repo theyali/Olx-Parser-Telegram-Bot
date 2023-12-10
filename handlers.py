@@ -4,7 +4,7 @@ from config import bot, dp
 from aiogram.dispatcher import FSMContext
 from aiogram.dispatcher.filters import Command
 from aiogram.dispatcher.filters.state import State, StatesGroup
-from scraper import fetch_and_parse, get_total_pages
+from scraper import process_page, get_total_pages
 
 
 class Form(StatesGroup):
@@ -89,7 +89,8 @@ async def process_price_range(message: types.Message, state: FSMContext):
     else:
         for page_number in range(1, total_pages + 1):
             url = f"{base_url}&page={page_number}"
-            parsed_data = await fetch_and_parse(url)
+            parsed_data = await process_page(url)
+            print(url)
             for product in parsed_data:
                 title = product['title']
                 description = product['description']

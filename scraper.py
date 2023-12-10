@@ -1,21 +1,31 @@
 from bs4 import BeautifulSoup
 import aiohttp
+import asyncio
 
 async def fetch_and_parse(url: str):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             html = await response.text()
     soup = BeautifulSoup(html, 'html.parser')
+    print(url)
     # Parse the data from the soup object and return it
     data = await parse_all_links(soup)
+    with open('data.html', 'w', encoding='utf-8') as f:
+        f.write(soup.prettify())
     return data
+
+async def process_page(url):
+    product_urls = await fetch_and_parse(url)
+    tasks = [fetch_and_parse_product(product_url) for product_url in product_urls]
+    return await asyncio.gather(*tasks)
+
+
 
 async def fetch_and_parse_product(url: str):
     async with aiohttp.ClientSession() as session:
         async with session.get(url) as response:
             html = await response.text()
     soup = BeautifulSoup(html, 'html.parser')
-    # Extract the necessary data from the soup object
     title_div = soup.find('div', {'data-cy': 'ad_title'})
     title = title_div.find('h4').text
     description_div = soup.find('div', {'data-cy': 'ad_description'})
@@ -28,15 +38,14 @@ async def fetch_and_parse_product(url: str):
     return {'title': title, 'description': description, 'price': price, 'images':imgs, 'url': url}
 
 async def parse_all_links(soup):
-    # Find all the product listings on the page
-    div = soup.find('div', {'data-cy': 'l-card'})
-    links = div.find_all('a')
-    data = []
+    links = soup.find_all('a', {'class': 'css-rc5s2u'})
+    product_urls = []
     for link in links:
-        product_url = f"https://www.olx.uz/{link.get('href')}"
-        product_data = await fetch_and_parse_product(product_url)
-        data.append(product_data)
-    return data
+        href = link.get('href')
+        product_url = f"https://www.olx.uz{href}"
+        product_urls.append(product_url)
+    print(product_urls)
+    return product_urls
 
 async def get_total_pages(url: str):
     async with aiohttp.ClientSession() as session:
