@@ -6,6 +6,7 @@ from aiogram.dispatcher.filters import Command
 from aiogram.dispatcher.filters.state import State, StatesGroup
 from scraper import fetch_and_parse, get_total_pages
 import os
+import asyncio
 
 OWNER_ID = os.getenv('OWNER_ID')
 
@@ -84,10 +85,12 @@ async def process_currency(callback_query: types.CallbackQuery, state: FSMContex
     await Form.price_range.set()
 
 
-async def send_product_data(url: str, chat_id):
+async def send_product_data(url: str, chat_id, bot, keyword, processed_ids):
     global should_continue_parsing
 
-    async for product_data in fetch_and_parse(url, should_continue):
+    async for product_data in fetch_and_parse(url, should_continue, chat_id=chat_id, bot=bot, keyword=keyword, processed_ids=processed_ids):
+        if product_data is None:
+            continue
         if not should_continue_parsing:
             break
         title = product_data['title']
@@ -113,15 +116,19 @@ async def process_price_range(message: types.Message, state: FSMContext):
     category = data['category']
     currency = data['currency']
     base_url = f"https://www.olx.uz/{category}/q-{keyword}/?currency={currency}&search%5Bfilter_float_price:from%5D={min_price}&search%5Bfilter_float_price:to%5D={max_price}"
+    processed_ids = set()
+    print(len(processed_ids))
     while True:
-        total_pages = await get_total_pages(base_url, should_continue)
+        total_pages = await get_total_pages(base_url, should_continue, chat_id=message.chat.id, bot=bot)
         if not should_continue_parsing or total_pages == 'Мы нашли  0 объявлений':
             break
         for page_number in range(1, total_pages + 1):
             if not should_continue_parsing:
                 break
             url = f"{base_url}&page={page_number}"
-            await send_product_data(url, message.chat.id)
+            await send_product_data(url, message.chat.id, bot=bot, keyword=keyword, processed_ids=processed_ids)
+        if should_continue_parsing:
+            await asyncio.sleep(10)
     if total_pages == 'Мы нашли  0 объявлений':
         await bot.send_message(message.chat.id, "🅾Мы нашли  0 объявлений🅾️")
     keyboard = InlineKeyboardMarkup()

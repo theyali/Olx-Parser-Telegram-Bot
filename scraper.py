@@ -3,13 +3,12 @@ import aiohttp
 import asyncio
 import sys
 
-async def get_html(url: str, should_continue, home_url='https://www.olx.uz', retries: int = 10, delay: int = 1, long_delay: int = 240):
+async def get_html(url: str, should_continue, chat_id=None, home_url='https://www.olx.uz', retries: int = 10, delay: int = 1, long_delay: int = 240, bot= None):
     session = aiohttp.ClientSession()
     try:
         attempt = 0
         while attempt < retries:
             if not should_continue():
-                print("Остановлено пользователем")
                 return None
 
             try:
@@ -26,9 +25,11 @@ async def get_html(url: str, should_continue, home_url='https://www.olx.uz', ret
 
             attempt += 1
             if attempt >= 10:
+                if chat_id is not None:
+                    await bot.send_message(chat_id, "⏳Ожидаем 4 минуты ⏳перед следующими попытками...")
                 print("Ждем 4 минуты перед следующими попытками")
                 await asyncio.sleep(long_delay)
-                attempt = 0  # Сброс счетчика попыток
+                attempt = 0 
             else:
                 await asyncio.sleep(delay)
 
@@ -37,18 +38,16 @@ async def get_html(url: str, should_continue, home_url='https://www.olx.uz', ret
         await session.close()
 
 
-
-
-    
-async def fetch_and_parse(url: str, should_continue):
-    html = await get_html(url, should_continue)
+async def fetch_and_parse(url: str, should_continue, chat_id, bot, keyword, processed_ids):
+    html = await get_html(url, should_continue, chat_id=chat_id, bot=bot)
     try:
         soup = BeautifulSoup(html, 'html.parser')
     except:
         soup = None
     print(url)
-    # Parse the data from the soup object and return it
-    async for product_data in parse_all_links(soup, should_continue):
+    if chat_id is not None:
+        await bot.send_message(chat_id, "Ожидаем новые объявления... ⏰")
+    async for product_data in parse_all_links(soup, should_continue, keyword, processed_ids=processed_ids):
         yield product_data
     
 
@@ -59,7 +58,7 @@ def truncate_description(description, max_length=1000):
     return description
 
 
-async def fetch_and_parse_product(url: str, should_continue):
+async def fetch_and_parse_product(url: str, should_continue, keyword):
     html = await get_html(url, should_continue)
     try:
         soup = BeautifulSoup(html, 'html.parser')
@@ -69,6 +68,8 @@ async def fetch_and_parse_product(url: str, should_continue):
     try:
         title_div = soup.find('div', {'data-cy': 'ad_title'})
         title = title_div.find('h4').text
+        if keyword.lower() not in title.lower():
+            return None
     except AttributeError:
         title = 'Нет названия'
     description = ''
@@ -91,28 +92,32 @@ async def fetch_and_parse_product(url: str, should_continue):
         imgs = [img.get('src') for img in imgs]
     except:
         imgs = 'Нет фото'
-    return {'title': title, 'description': description, 'price': price, 'images':imgs, 'url': url}
+    return {'id': url, 'title': title, 'description': description, 'price': price, 'images': imgs, 'url': url}
 
-async def parse_all_links(soup, should_continue):
+async def parse_all_links(soup, should_continue, keyword, processed_ids):
     links = soup.find_all('a', {'class': 'css-rc5s2u'})
     for link in links:
         href = link.get('href')
         product_url = f"https://www.olx.uz{href}"
-        product_data = await fetch_and_parse_product(product_url, should_continue)
-        yield product_data
+        product_data = await fetch_and_parse_product(product_url, should_continue, keyword)
+        if product_data and product_data['id'] not in processed_ids:
+            processed_ids.add(product_data['id'])
+            yield product_data
 
-async def get_total_pages(url: str, should_continue):
-    html = await get_html(url, should_continue)
+async def get_total_pages(url: str, should_continue, chat_id, bot):
+    html = await get_html(url, should_continue, chat_id=chat_id, bot=bot)
     try:
         soup = BeautifulSoup(html, 'html.parser')
     except:
         soup = None
     if soup is not None:
-        # Find the last page number
         if soup.find('span', {'data-testid': 'total-count'}).text.strip() == 'Мы нашли  0 объявлений':
             return 'Мы нашли  0 объявлений'
         try:
             last_page_number = int(soup.find('ul', {'data-testid': 'pagination-list'}).find_all('li')[-1].text)
         except AttributeError:
             last_page_number = 1
+
+        if last_page_number > 10:
+            last_page_number = 10
         return last_page_number
