@@ -18,6 +18,8 @@ class Form(StatesGroup):
 
 should_continue_parsing = True
 
+def should_continue():
+    return should_continue_parsing
 
 @dp.message_handler(commands=['start'])
 async def send_welcome(message: types.Message, user_id=None):
@@ -85,7 +87,7 @@ async def process_currency(callback_query: types.CallbackQuery, state: FSMContex
 async def send_product_data(url: str, chat_id):
     global should_continue_parsing
 
-    async for product_data in fetch_and_parse(url):
+    async for product_data in fetch_and_parse(url, should_continue):
         if not should_continue_parsing:
             break
         title = product_data['title']
@@ -111,32 +113,22 @@ async def process_price_range(message: types.Message, state: FSMContext):
     category = data['category']
     currency = data['currency']
     base_url = f"https://www.olx.uz/{category}/q-{keyword}/?currency={currency}&search%5Bfilter_float_price:from%5D={min_price}&search%5Bfilter_float_price:to%5D={max_price}"
-    total_pages = await get_total_pages(base_url)
-    if total_pages == 'Мы нашли  0 объявлений':
-            await bot.send_message(message.chat.id, "🅾Мы нашли  0 объявлений🅾️")
-
-            keyboard = InlineKeyboardMarkup()
-            transport_btn = InlineKeyboardButton('Транспорт🚘', callback_data='transport')
-            electronics_btn = InlineKeyboardButton('Электроника💻', callback_data='elektronika')
-            reset_btn = InlineKeyboardButton('Снять задачу🗑', callback_data='reset')
-            keyboard.add(transport_btn, electronics_btn, reset_btn)
-            await bot.send_message(message.chat.id, "Выберите категорию🛠:", reply_markup=keyboard)
-
-            await state.finish()
-
-    else:
+    while True:
+        total_pages = await get_total_pages(base_url, should_continue)
+        if not should_continue_parsing or total_pages == 'Мы нашли  0 объявлений':
+            break
         for page_number in range(1, total_pages + 1):
             if not should_continue_parsing:
                 break
             url = f"{base_url}&page={page_number}"
             await send_product_data(url, message.chat.id)
-        if should_continue_parsing:
-            await bot.send_message(message.chat.id, "✅Парсинг завершен.✅")
-        keyboard = InlineKeyboardMarkup()
-        transport_btn = InlineKeyboardButton('Транспорт🚘', callback_data='transport')
-        electronics_btn = InlineKeyboardButton('Электроника💻', callback_data='elektronika')
-        reset_btn = InlineKeyboardButton('Снять задачу🗑', callback_data='reset')
-        keyboard.add(transport_btn, electronics_btn, reset_btn)
-        await bot.send_message(message.chat.id, "Выберите категорию🛠:", reply_markup=keyboard)
+    if total_pages == 'Мы нашли  0 объявлений':
+        await bot.send_message(message.chat.id, "🅾Мы нашли  0 объявлений🅾️")
+    keyboard = InlineKeyboardMarkup()
+    transport_btn = InlineKeyboardButton('Транспорт🚘', callback_data='transport')
+    electronics_btn = InlineKeyboardButton('Электроника💻', callback_data='elektronika')
+    reset_btn = InlineKeyboardButton('Снять задачу🗑', callback_data='reset')
+    keyboard.add(transport_btn, electronics_btn, reset_btn)
+    await bot.send_message(message.chat.id, "Выберите категорию🛠:", reply_markup=keyboard)
 
-        await state.finish()
+    await state.finish()
